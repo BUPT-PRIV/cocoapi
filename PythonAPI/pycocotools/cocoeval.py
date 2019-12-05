@@ -145,6 +145,8 @@ class COCOeval:
             computeIoU = self.computeIoU
         elif p.iouType == 'keypoints':
             computeIoU = self.computeOks
+        elif p.iouType == 'hier':
+            computeIoU = self.computeHPs
         self.ious = {(imgId, catId): computeIoU(imgId, catId) \
                         for imgId in p.imgIds
                         for catId in catIds}
@@ -230,6 +232,42 @@ class COCOeval:
                 if k1 > 0:
                     e=e[vg > 0]
                 ious[i, j] = np.sum(np.exp(-e)) / e.shape[0]
+        return ious
+
+    def computeHPs(self, imgId, catId):
+        p = self.params
+        # dimention here should be Nxm
+        gts = self._gts[imgId, catId]
+        dts = self._dts[imgId, catId]
+        inds = np.argsort([-d['score'] for d in dts], kind='mergesort')
+        dts = [dts[i] for i in inds]
+        if len(dts) > p.maxDets[-1]:
+            dts = dts[0:p.maxDets[-1]]
+        # if len(gts) == 0 and len(dts) == 0:
+        if len(gts) == 0 or len(dts) == 0:
+            return []
+        ious = np.zeros((len(dts), len(gts)))
+
+        for j, gt in enumerate(gts):
+            # create bounds for ignore regions(double the gt bbox)
+            g = gt['hier']
+            vg = np.array(g[4::5])
+            for i, dt in enumerate(dts):
+                d = dt['hier']
+                iou_parts = []
+                for p in range(len(d) // 5):
+                    if vg[p] > 0:
+                        pp = p * 5
+                        d_part = [[d[pp], d[pp + 1], d[pp + 2] - d[pp] + 1, d[pp + 3] - d[pp + 1] + 1]]
+                        g_part = [[g[pp], g[pp + 1], g[pp + 2] - g[pp] + 1, g[pp + 3] - g[pp + 1] + 1]]
+                        iou_parts.append(maskUtils.iou(d_part, g_part, [1])[0, 0])
+                    else:
+                        iou_parts.append(0)
+
+                if np.sum(vg) > 0:
+                    ious[i, j] = np.sum(iou_parts) / np.sum(vg)
+                else:
+                    ious[i, j] = 0
         return ious
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
@@ -483,6 +521,21 @@ class COCOeval:
             stats[8] = _summarize(0, maxDets=20, areaRng='medium')
             stats[9] = _summarize(0, maxDets=20, areaRng='large')
             return stats
+        def _summarizeHiers():
+            stats = np.zeros((12,))
+            stats[0] = _summarize(1)
+            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
+            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
+            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
+            stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
+            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
+            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
+            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
+            return stats
         if not self.eval:
             raise Exception('Please run accumulate() first')
         iouType = self.params.iouType
@@ -490,6 +543,8 @@ class COCOeval:
             summarize = _summarizeDets
         elif iouType == 'keypoints':
             summarize = _summarizeKps
+        elif iouType == 'hier':
+            summarize = _summarizeHiers
         self.stats = summarize()
 
     def __str__(self):
@@ -523,7 +578,7 @@ class Params:
         self.kpt_oks_sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
 
     def __init__(self, iouType='segm'):
-        if iouType == 'segm' or iouType == 'bbox':
+        if iouType == 'segm' or iouType == 'bbox' or iouType == 'hier':
             self.setDetParams()
         elif iouType == 'keypoints':
             self.setKpParams()

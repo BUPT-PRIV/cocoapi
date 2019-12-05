@@ -349,6 +349,18 @@ class COCO:
                 ann['area'] = (x1-x0)*(y1-y0)
                 ann['id'] = id + 1
                 ann['bbox'] = [x0,y0,x1-x0,y1-y0]
+        elif 'hier' in anns[0]:
+            res.dataset['categories'] = copy.deepcopy(self.dataset['categories'])
+            for id, ann in enumerate(anns):
+                h = ann['hier']
+                xx1 = h[0::5]
+                yy1 = h[1::5]
+                xx2 = h[2::5]
+                yy2 = h[3::5]
+                x0,x1,y0,y1 = np.min(xx1), np.max(xx2), np.min(yy1), np.max(yy2)
+                ann['area'] = (x1-x0)*(y1-y0)
+                ann['id'] = id + 1
+                ann['bbox'] = [x0,y0,x1-x0,y1-y0]
         print('DONE (t={:0.2f}s)'.format(time.time()- tic))
 
         res.dataset['annotations'] = anns
