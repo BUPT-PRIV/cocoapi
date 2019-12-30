@@ -253,6 +253,7 @@ class COCOeval:
             g = gt['hier']
             vg = np.array(g[4::5])
             for i, dt in enumerate(dts):
+                fp = 0
                 d = dt['hier']
                 iou_parts = []
                 for p in range(len(d) // 5):
@@ -262,12 +263,14 @@ class COCOeval:
                         g_part = [[g[pp], g[pp + 1], g[pp + 2] - g[pp] + 1, g[pp + 3] - g[pp + 1] + 1]]
                         iou_parts.append(maskUtils.iou(d_part, g_part, [1])[0, 0])
                     else:
+                        if d[p * 5 + 4] > 0:
+                            fp += 1
                         iou_parts.append(0)
 
                 if np.sum(vg) > 0:
-                    ious[i, j] = np.sum(iou_parts) / np.sum(vg)
+                    ious[i, j] = np.sum(iou_parts) / np.sum(vg) * np.sqrt((1 - fp / (len(d) // 5)))
                 else:
-                    ious[i, j] = 1
+                    ious[i, j] = np.sqrt((1 - fp / (len(d) // 5)))
         return ious
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
