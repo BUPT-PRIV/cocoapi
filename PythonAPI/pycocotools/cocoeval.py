@@ -262,7 +262,7 @@ class COCOeval:
                         g_part = [[g[pp], g[pp + 1], g[pp + 2] - g[pp] + 1, g[pp + 3] - g[pp + 1] + 1]]
                         iou_parts.append(maskUtils.iou(d_part, g_part, [1])[0, 0])
                     else:
-                        iou_parts.append(0)
+                        iou_parts.append(1)
 
                 if np.sum(vg) > 0:
                     ious[i, j] = np.sum(iou_parts) / np.sum(vg)
