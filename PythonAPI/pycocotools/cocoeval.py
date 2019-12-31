@@ -268,9 +268,9 @@ class COCOeval:
                         iou_parts.append(0)
 
                 if np.sum(vg) > 0:
-                    ious[i, j] = np.sum(iou_parts) / np.sum(vg) * np.sqrt((1 - fp / (len(d) // 5)))
+                    ious[i, j] = np.sum(iou_parts) / np.sum(vg)* (1 - fp / (len(d) // 5))
                 else:
-                    ious[i, j] = np.sqrt((1 - fp / (len(d) // 5)))
+                    ious[i, j] = (1 - fp / (len(d) // 5))
         return ious
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
