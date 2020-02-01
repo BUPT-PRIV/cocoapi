@@ -57,7 +57,7 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm'):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', withTiny=False):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -72,7 +72,7 @@ class COCOeval:
         self.eval     = {}                  # accumulated evaluation results
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
-        self.params = Params(iouType=iouType) # parameters
+        self.params = Params(iouType=iouType, withTiny=withTiny) # parameters
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
@@ -511,6 +511,22 @@ class COCOeval:
             stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
             stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
             return stats
+        def _summarizeDets_wt():
+            stats = np.zeros((13,))
+            stats[0] = _summarize(1)
+            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
+            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
+            stats[3] = _summarize(1, areaRng='tiny', maxDets=self.params.maxDets[2])
+            stats[4] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[5] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[6] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
+            stats[7] = _summarize(0, maxDets=self.params.maxDets[0])
+            stats[8] = _summarize(0, maxDets=self.params.maxDets[1])
+            stats[9] = _summarize(0, maxDets=self.params.maxDets[2])
+            stats[10] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[11] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[12] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
+            return stats
         def _summarizeKps():
             stats = np.zeros((10,))
             stats[0] = _summarize(1, maxDets=20)
@@ -524,30 +540,17 @@ class COCOeval:
             stats[8] = _summarize(0, maxDets=20, areaRng='medium')
             stats[9] = _summarize(0, maxDets=20, areaRng='large')
             return stats
-        def _summarizeHiers():
-            stats = np.zeros((12,))
-            stats[0] = _summarize(1)
-            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
-            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
-            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
-            stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
-            return stats
         if not self.eval:
             raise Exception('Please run accumulate() first')
         iouType = self.params.iouType
-        if iouType == 'segm' or iouType == 'bbox':
-            summarize = _summarizeDets
+        withTiny = self.params.withTiny
+        if iouType == 'segm' or iouType == 'bbox' or iouType == 'hier':
+            if withTiny:
+                summarize = _summarizeDets_wt
+            else:
+                summarize = _summarizeDets
         elif iouType == 'keypoints':
             summarize = _summarizeKps
-        elif iouType == 'hier':
-            summarize = _summarizeHiers
         self.stats = summarize()
 
     def __str__(self):
@@ -568,6 +571,17 @@ class Params:
         self.areaRngLbl = ['all', 'small', 'medium', 'large']
         self.useCats = 1
 
+    def setDetParams_wt(self):
+        self.imgIds = []
+        self.catIds = []
+        # np.arange causes trouble.  the data point on arange is slightly larger than the true value
+        self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
+        self.maxDets = [1, 10, 100]
+        self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 16 ** 2], [16 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
+        self.areaRngLbl = ['all', 'tiny', 'small', 'medium', 'large']
+        self.useCats = 1
+
     def setKpParams(self):
         self.imgIds = []
         self.catIds = []
@@ -580,13 +594,17 @@ class Params:
         self.useCats = 1
         self.kpt_oks_sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
 
-    def __init__(self, iouType='segm'):
+    def __init__(self, iouType='segm', withTiny=False):
         if iouType == 'segm' or iouType == 'bbox' or iouType == 'hier':
-            self.setDetParams()
+            if withTiny:
+                self.setDetParams_wt()
+            else:
+                self.setDetParams()
         elif iouType == 'keypoints':
             self.setKpParams()
         else:
             raise Exception('iouType not supported')
         self.iouType = iouType
+        self.withTiny = withTiny
         # useSegm is deprecated
         self.useSegm = None
